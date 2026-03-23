@@ -7,7 +7,8 @@ const appointmentSchema = new mongoose.Schema({
 
   // Referencias al especialista y servicio
   specialistId: { type: String, required: true }, // 'sp1', 'sp2', ...
-  serviceId:    { type: String, required: true }, // 's01', 's02', ...
+  serviceId:    { type: String, required: true }, // ID(s) del servicio, puede ser 's01' o 's01,s02' para múltiples
+  serviceNames:  { type: String, default: '' },       // Nombres legibles de los servicios
 
   // Fecha de la cita (solo fecha, sin hora — se guarda como YYYY-MM-DD string
   // para evitar problemas de timezone en consultas)

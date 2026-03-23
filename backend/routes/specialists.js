@@ -42,10 +42,15 @@ router.get('/:specialistId', async (req, res) => {
 function normalizeSpec(spec) {
   return {
     ...spec,
-    startHours:      Object.fromEntries(spec.startHours    || new Map()),
-    endHours:        Object.fromEntries(spec.endHours      || new Map()),
-    scheduleDisplay: Object.fromEntries(spec.scheduleDisplay || new Map()),
+    startHours:      isMap(spec.startHours) ? Object.fromEntries(spec.startHours) : spec.startHours,
+    endHours:        isMap(spec.endHours) ? Object.fromEntries(spec.endHours) : spec.endHours,
+    scheduleDisplay: isMap(spec.scheduleDisplay) ? Object.fromEntries(spec.scheduleDisplay) : spec.scheduleDisplay,
   };
+}
+
+// helper
+function isMap(value) {
+  return value instanceof Map;
 }
 
 module.exports = router;

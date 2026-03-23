@@ -432,3 +432,22 @@ Query params opcionales:
 
 ### PATCH /api/appointments/:id/cancel
 Cancela una cita por su MongoDB `_id`.
+
+
+mongodb+srv://HappyBodyLuxe_user:happyBodyLuxe2134.@happybodyluxe.vhpnzup.mongodb.net/HappyBody?appName=HappyBodyLuxe
+
+
+app.js
+const API_URL = 'http://localhost:3001';
+
+routes/apoiment.js
+// Hora de entrada/salida ese día
+    // Mongoose Map → acceder con .get() o convertir a objeto
+const startHoursObj = spec.startHours || {};
+const endHoursObj   = spec.endHours || {};
+
+MongoDB
+happybody_user
+Happy2134.
+
+mongodb+srv://happybody_user:Happy2134.@cluster0.wqa8e7y.mongodb.net/?appName=Cluster0

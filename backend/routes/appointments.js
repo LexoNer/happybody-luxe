@@ -97,8 +97,8 @@ router.get('/available', async (req, res) => {
 
     // Hora de entrada/salida ese día
     // Mongoose Map → acceder con .get() o convertir a objeto
-    const startHoursObj = Object.fromEntries(spec.startHours || new Map());
-    const endHoursObj   = Object.fromEntries(spec.endHours   || new Map());
+ const startHoursObj = spec.startHours || {};
+const endHoursObj   = spec.endHours || {};
 
     const startDec = startHoursObj[dow];
     const endDec   = endHoursObj[dow];
@@ -191,6 +191,7 @@ router.post('/', async (req, res) => {
       patientPhone,
       specialistId,
       serviceId,
+      serviceNames,
       date,
       startTime,
       durationMinutes
@@ -236,6 +237,7 @@ router.post('/', async (req, res) => {
       patientPhone:    (patientPhone || '').trim(),
       specialistId,
       serviceId,
+      serviceNames:    (serviceNames || '').trim(),
       date,
       startTime,
       endTime,
@@ -292,6 +294,24 @@ router.patch('/:id/cancel', async (req, res) => {
   } catch (err) {
     console.error('[PATCH /appointments/:id/cancel]', err.message);
     res.status(500).json({ ok: false, error: 'Error al cancelar la cita' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────
+//  PATCH /api/appointments/:id/complete
+// ─────────────────────────────────────────────────────────────
+router.patch('/:id/complete', async (req, res) => {
+  try {
+    const appt = await Appointment.findByIdAndUpdate(
+      req.params.id,
+      { status: 'completed' },
+      { new: true }
+    );
+    if (!appt) return res.status(404).json({ ok: false, error: 'Cita no encontrada' });
+    res.json({ ok: true, message: 'Cita marcada como completada', data: appt });
+  } catch (err) {
+    console.error('[PATCH /appointments/:id/complete]', err.message);
+    res.status(500).json({ ok: false, error: 'Error al completar la cita' });
   }
 });
 

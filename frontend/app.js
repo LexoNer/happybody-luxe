@@ -1,80 +1,59 @@
 // ═══════════════════════════════════════════════════════════════
-//  HAPPY BODY LUXE — app.js
-//  Conecta con el backend Node.js + MongoDB para disponibilidad real
+//  HAPPY BODY CLINIC & SPA — app.js
+//  Selección de un servicio por agenda, disponibilidad real desde MongoDB
 // ═══════════════════════════════════════════════════════════════
 
-// ── URL de la API ─────────────────────────────────────────────
-// En desarrollo apunta a localhost, en producción a Railway/Render
-const API_URL = window.location.hostname === 'localhost' ||
-                window.location.hostname === '127.0.0.1'
-  ? 'http://localhost:3001'
-  : 'https://TU-API.up.railway.app'; // ← REEMPLAZAR con tu URL real
+const API_URL = 'http://localhost:3001'; // ← REEMPLAZAR con tu URL real de Railway
 
-// ── Estado global de la aplicación ───────────────────────────
+// ── Estado global ─────────────────────────────────────────────
 let S = {
-  // Datos cargados desde la API
-  CATS:  [],   // categorías de servicios
-  SVCS:  [],   // servicios
-  SPECS: [],   // especialistas
+  CATS:  [],
+  SVCS:  [],
+  SPECS: [],
 
-  // Selecciones del usuario
-  svc:   null, // servicio seleccionado
-  spec:  null, // especialista seleccionado
-  date:  null, // fecha seleccionada (Date object)
-  time:  null, // hora seleccionada ("HH:MM")
+  svc:    null,       // servicio seleccionado (uno solo)
+  spec:   null,
+  date:   null,
+  time:   null,
 
-  // Slots devueltos por la API
   availableSlots: [],
   blockedSlots:   [],
 
-  // Navegación del calendario
   calM: new Date().getMonth(),
   calY: new Date().getFullYear(),
 };
 
-// ═══════════════════════════════════════════════════════════════
+// ─────────────────────────────────────────────────────────────
 //  UTILIDADES
-// ═══════════════════════════════════════════════════════════════
+// ─────────────────────────────────────────────────────────────
 
-// "HH:MM" → minutos desde medianoche
 function toMin(t) {
   const [h, m] = t.split(':').map(Number);
   return h * 60 + m;
 }
-
-// Minutos → "HH:MM"
 function fromMin(m) {
-  const h  = Math.floor(m / 60);
-  const mm = m % 60;
+  const h = Math.floor(m / 60), mm = m % 60;
   return `${String(h).padStart(2,'0')}:${String(mm).padStart(2,'0')}`;
 }
-
-// "HH:MM" → "3:30 pm"
 function fmt(t) {
   const [hh, mm] = t.split(':');
   const h = +hh;
   return `${h > 12 ? h - 12 : h}:${mm} ${h >= 12 ? 'pm' : 'am'}`;
 }
-
-// Fecha → "YYYY-MM-DD" sin problemas de timezone
 function dateToStr(d) {
-  const y  = d.getFullYear();
-  const mo = String(d.getMonth() + 1).padStart(2, '0');
-  const dy = String(d.getDate()).padStart(2, '0');
-  return `${y}-${mo}-${dy}`;
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 }
-
-// Duración en minutos → texto legible
 function durLabel(min) {
-  if (min < 60)  return `${min} min`;
-  if (min === 60) return '1 hora';
-  if (min % 60 === 0) return `${min / 60} horas`;
+  if (min < 60)        return `${min} min`;
+  if (min === 60)      return '1 hora';
+  if (min % 60 === 0)  return `${min / 60} horas`;
   return `${Math.floor(min/60)}h ${min % 60}min`;
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  INICIALIZACIÓN — Carga datos desde la API
-// ═══════════════════════════════════════════════════════════════
+
+// ─────────────────────────────────────────────────────────────
+//  INICIALIZACIÓN
+// ─────────────────────────────────────────────────────────────
 
 document.addEventListener('DOMContentLoaded', () => {
   checkHealth();
@@ -85,48 +64,38 @@ async function checkHealth() {
   const dot  = document.getElementById('connection-dot');
   const pill = document.getElementById('connection-pill');
   try {
-    const res = await fetch(`${API_URL}/health`);
+    const res  = await fetch(`${API_URL}/health`);
     const data = await res.json();
     if (data.ok) {
-      pill.textContent = 'En línea';
+      pill.textContent     = 'En línea';
       dot.style.background = 'var(--gold)';
-    } else {
-      throw new Error('DB desconectada');
-    }
+    } else throw new Error();
   } catch {
-    pill.textContent = 'Sin conexión';
+    pill.textContent     = 'Sin conexión';
     dot.style.background = '#e05050';
   }
 }
 
 async function loadInitialData() {
   try {
-    // Carga servicios y especialistas en paralelo
     const [svcRes, specRes] = await Promise.all([
       fetch(`${API_URL}/api/services`),
       fetch(`${API_URL}/api/specialists`),
     ]);
-
     if (!svcRes.ok || !specRes.ok) throw new Error('Error en la respuesta del servidor');
 
     const svcData  = await svcRes.json();
     const specData = await specRes.json();
+    if (!svcData.ok || !specData.ok) throw new Error('Datos inválidos');
 
-    if (!svcData.ok || !specData.ok) throw new Error('Datos inválidos del servidor');
-
-    // Guardar en estado global
     S.SVCS  = svcData.data;
     S.SPECS = specData.data;
 
-    // Construir categorías únicas desde los servicios
+    // Construir categorías únicas en orden de aparición
     const catMap = new Map();
     S.SVCS.forEach(sv => {
       if (!catMap.has(sv.category)) {
-        catMap.set(sv.category, {
-          id:    sv.category,
-          name:  sv.categoryName,
-          color: sv.categoryColor,
-        });
+        catMap.set(sv.category, { id: sv.category, name: sv.categoryName, color: sv.categoryColor });
       }
     });
     S.CATS = Array.from(catMap.values());
@@ -139,29 +108,27 @@ async function loadInitialData() {
     console.error('Error cargando datos:', err);
     document.getElementById('service-list').innerHTML = `
       <div class="error-banner" style="margin:0;">
-        <span>No se pudo conectar con el servidor. Verifica que el backend está corriendo.</span>
+        <span>No se pudo conectar. Verifica que el backend esté corriendo.</span>
         <button onclick="loadInitialData()">↻ Reintentar</button>
       </div>`;
   }
 }
 
-// ═══════════════════════════════════════════════════════════════
+// ─────────────────────────────────────────────────────────────
 //  TABS
-// ═══════════════════════════════════════════════════════════════
+// ─────────────────────────────────────────────────────────────
 
 function switchTab(name) {
-  document.querySelectorAll('.tab-btn').forEach((b, i) => {
-    b.classList.toggle('active', ['agendar','especialistas'][i] === name);
-  });
-  document.querySelectorAll('.tab-panel').forEach(p => {
-    p.classList.toggle('active', p.id === 'tab-' + name);
-  });
+  document.querySelectorAll('.tab-btn').forEach((b, i) =>
+    b.classList.toggle('active', ['agendar','especialistas'][i] === name));
+  document.querySelectorAll('.tab-panel').forEach(p =>
+    p.classList.toggle('active', p.id === 'tab-' + name));
   if (name === 'especialistas') renderSpecs();
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  PASO 1 — SERVICIOS
-// ═══════════════════════════════════════════════════════════════
+// ─────────────────────────────────────────────────────────────
+//  PASO 1 — SERVICIOS (MULTISELECCIÓN)
+// ─────────────────────────────────────────────────────────────
 
 function renderSvcs() {
   let h = '';
@@ -173,16 +140,36 @@ function renderSvcs() {
       const sel    = S.svc?.serviceId === sv.serviceId;
       const durTxt = sv.durationMinutes < 60
         ? sv.durationMinutes + 'min'
-        : (sv.durationMinutes === 60 ? '1h' : (sv.durationMinutes / 60) + 'h');
-      h += `<div class="service-row ${sel ? 'selected' : ''}" onclick="selSvc('${sv.serviceId}')">
-        <span class="service-row-dot" style="background:${cat.color};"></span>
-        <span class="service-row-name">${sv.name}</span>
-        <span style="font-size:9px;color:var(--gold-dim);white-space:nowrap;border:1px solid var(--border);padding:1px 5px;margin-left:4px;">⏱${durTxt}</span>
-        <span class="service-row-check">✓</span>
-      </div>`;
+        : (sv.durationMinutes === 60 ? '1h' : (sv.durationMinutes/60) + 'h');
+      h += `
+        <div class="service-row ${sel ? 'selected' : ''}" onclick="selSvc('${sv.serviceId}')">
+          <span class="service-row-dot" style="background:${cat.color};"></span>
+          <span class="service-row-name">${sv.name}</span>
+          <span style="font-size:9px;color:var(--gold-dim);white-space:nowrap;border:1px solid var(--border);padding:1px 5px;margin-left:4px;">⏱${durTxt}</span>
+          <span class="service-row-check">✓</span>
+        </div>`;
     });
   });
-  document.getElementById('service-list').innerHTML = h || '<p style="padding:16px;font-size:12px;color:var(--muted);">No hay servicios disponibles</p>';
+  document.getElementById('service-list').innerHTML = h ||
+    '<p style="padding:16px;font-size:12px;color:var(--muted);">No hay servicios disponibles</p>';
+}
+
+function selSvc(id) {
+  S.svc  = S.SVCS.find(s => s.serviceId === id);
+  S.spec = null;
+  S.date = null;
+  S.time = null;
+  S.availableSlots = [];
+  S.blockedSlots   = [];
+
+  const di = document.getElementById('slot-dur-info');
+  if (di) di.style.display = 'none';
+  document.getElementById('slots-section').style.display = 'none';
+  document.getElementById('cal-section').style.display   = 'none';
+
+  renderSvcs();
+  renderSpecList();
+  updateConfirm();
 }
 
 // ── Búsqueda en tiempo real ───────────────────────────────────
@@ -203,8 +190,7 @@ function filterSvcs(q) {
   });
 
   list.querySelectorAll('.cat-header').forEach(hdr => {
-    let next = hdr.nextElementSibling;
-    let anyVisible = false;
+    let next = hdr.nextElementSibling, anyVisible = false;
     while (next && !next.classList.contains('cat-header')) {
       if (next.style.display !== 'none') anyVisible = true;
       next = next.nextElementSibling;
@@ -222,28 +208,14 @@ function clearSearch() {
   inp.focus();
 }
 
-function selSvc(id) {
-  S.svc  = S.SVCS.find(s => s.serviceId === id);
-  S.spec = null;
-  S.date = null;
-  S.time = null;
-  S.availableSlots = [];
-  S.blockedSlots   = [];
-
-  const di = document.getElementById('slot-dur-info');
-  if (di) di.style.display = 'none';
-
-  renderSvcs();
-  renderSpecList();
-  updateConfirm();
-}
-
-// ═══════════════════════════════════════════════════════════════
+// ─────────────────────────────────────────────────────────────
 //  PASO 2A — ESPECIALISTAS
-// ═══════════════════════════════════════════════════════════════
+//  Filtra: solo las que realizan TODOS los servicios seleccionados
+// ─────────────────────────────────────────────────────────────
 
 function renderSpecList() {
   const el = document.getElementById('spec-list');
+
   if (!S.svc) {
     el.innerHTML = '<div class="empty-state"><span class="empty-icon">✦</span><p>Selecciona un tratamiento primero</p></div>';
     document.getElementById('cal-section').style.display = 'none';
@@ -251,21 +223,22 @@ function renderSpecList() {
   }
 
   el.innerHTML = S.SPECS.map(sp => {
-    // Comparar con el array de serviceIds del especialista
     const spServices = Array.isArray(sp.services) ? sp.services : [];
     const ok  = spServices.includes(S.svc.serviceId);
     const sel = S.spec?.specialistId === sp.specialistId;
-    return `<div class="spec-row ${sel ? 'selected' : ''} ${!ok ? 'unavail' : ''}"
-      onclick="${ok ? `selSpec('${sp.specialistId}')` : ''}">
-      <div class="spec-mono" style="background:${sp.color};">${sp.initials}</div>
-      <div class="spec-info">
-        <div class="spec-info-name">${sp.name}</div>
-        <div class="spec-info-role">${sp.role}</div>
-      </div>
-      ${ok
-        ? `<div class="spec-badge">Disponible</div>`
-        : `<span style="font-size:10px;color:var(--muted);letter-spacing:.5px;">No realiza</span>`}
-    </div>`;
+
+    return `
+      <div class="spec-row ${sel ? 'selected' : ''} ${!ok ? 'unavail' : ''}"
+           onclick="${ok ? `selSpec('${sp.specialistId}')` : ''}">
+        <div class="spec-mono" style="background:${sp.color};">${sp.initials}</div>
+        <div class="spec-info">
+          <div class="spec-info-name">${sp.name}</div>
+          <div class="spec-info-role">${sp.role}</div>
+        </div>
+        ${ok
+          ? `<div class="spec-badge">Disponible</div>`
+          : `<span style="font-size:10px;color:var(--muted);letter-spacing:.5px;">No realiza todos</span>`}
+      </div>`;
   }).join('');
 }
 
@@ -277,15 +250,15 @@ function selSpec(id) {
   S.blockedSlots   = [];
 
   renderSpecList();
-  document.getElementById('cal-section').style.display = 'block';
+  document.getElementById('cal-section').style.display   = 'block';
   document.getElementById('slots-section').style.display = 'none';
   renderCal();
   updateConfirm();
 }
 
-// ═══════════════════════════════════════════════════════════════
+// ─────────────────────────────────────────────────────────────
 //  PASO 2B — CALENDARIO
-// ═══════════════════════════════════════════════════════════════
+// ─────────────────────────────────────────────────────────────
 
 const MNS = ['Enero','Febrero','Marzo','Abril','Mayo','Junio',
              'Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
@@ -295,32 +268,27 @@ function renderCal() {
   document.getElementById('cal-lbl').textContent = `${MNS[S.calM]} ${S.calY}`;
   const today    = new Date();
   const firstDay = new Date(S.calY, S.calM, 1).getDay();
-  const dim      = new Date(S.calY, S.calM + 1, 0).getDate();
-
-  // workDays del especialista: array de números [1,2,3,4,5,6]
+  const dim      = new Date(S.calY, S.calM+1, 0).getDate();
   const workDays = Array.isArray(S.spec?.workDays) ? S.spec.workDays : [];
 
   let h = DNS.map(d => `<div class="cal-dh">${d}</div>`).join('');
-
   for (let i = 0; i < firstDay; i++) h += `<div class="cal-d empty"></div>`;
-
   for (let d = 1; d <= dim; d++) {
-    const date  = new Date(S.calY, S.calM, d);
-    const dow   = date.getDay();
-    const past  = date < new Date(today.getFullYear(), today.getMonth(), today.getDate());
-    const isT   = d === today.getDate() && S.calM === today.getMonth() && S.calY === today.getFullYear();
+    const date = new Date(S.calY, S.calM, d);
+    const dow  = date.getDay();
+    const past = date < new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const isT  = d === today.getDate() && S.calM === today.getMonth() && S.calY === today.getFullYear();
     const isSel = S.date?.getDate() === d && S.date?.getMonth() === S.calM;
-    const ok    = workDays.includes(dow) && !past;
+    const ok   = workDays.includes(dow) && !past;
 
     let cls = 'cal-d';
-    if (past)        cls += ' past';
-    else if (isSel)  cls += ' sel';
-    else if (ok)     cls += ' avail';
+    if (past)       cls += ' past';
+    else if (isSel) cls += ' sel';
+    else if (ok)    cls += ' avail';
     if (isT && !isSel) cls += ' today-d';
 
     h += `<div class="${cls}" onclick="${ok ? `selDate(${d})` : ''}">${d}</div>`;
   }
-
   document.getElementById('cal-grid').innerHTML = h;
 }
 
@@ -332,7 +300,7 @@ function selDate(d) {
 
   renderCal();
   document.getElementById('slots-section').style.display = 'block';
-  document.getElementById('slot-dur-info').style.display = 'none';
+  document.getElementById('slot-dur-info').style.display  = 'none';
   fetchSlots();
   updateConfirm();
 }
@@ -344,9 +312,10 @@ function changeMonth(dir) {
   renderCal();
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  PASO 2C — SLOTS (llamada real a MongoDB vía API)
-// ═══════════════════════════════════════════════════════════════
+// ─────────────────────────────────────────────────────────────
+//  PASO 2C — SLOTS
+//  La duración que se consulta es la SUMA de todos los servicios
+// ─────────────────────────────────────────────────────────────
 
 async function fetchSlots() {
   if (!S.spec || !S.date || !S.svc) return;
@@ -355,7 +324,6 @@ async function fetchSlots() {
   const errorBaner = document.getElementById('slots-error');
   const durInfo    = document.getElementById('slot-dur-info');
 
-  // Ocultar error previo, mostrar spinner
   errorBaner.style.display = 'none';
   slotsGrid.innerHTML = `
     <div class="loading-overlay" style="grid-column:1/-1;">
@@ -370,18 +338,14 @@ async function fetchSlots() {
   try {
     const res  = await fetch(url);
     const data = await res.json();
-
-    if (!res.ok || !data.ok) {
-      throw new Error(data.error || 'Error al consultar disponibilidad');
-    }
+    if (!res.ok || !data.ok) throw new Error(data.error || 'Error al consultar disponibilidad');
 
     S.availableSlots = data.available || [];
     S.blockedSlots   = data.blocked   || [];
 
     renderSlots();
 
-    // Mostrar info de duración
-    durInfo.innerHTML  = `<span>⏱</span> Duración del tratamiento: <strong>${durLabel(dur)}</strong>`;
+    durInfo.innerHTML     = `<span>⏱</span> Duración del tratamiento: <strong>${durLabel(dur)}</strong>`;
     durInfo.style.display = 'flex';
 
   } catch (err) {
@@ -392,10 +356,7 @@ async function fetchSlots() {
   }
 }
 
-// Variable global para re-intentar desde el botón de error
-function retrySlots() {
-  fetchSlots();
-}
+function retrySlots() { fetchSlots(); }
 
 function renderSlots() {
   const slotsGrid = document.getElementById('slots-grid');
@@ -403,8 +364,9 @@ function renderSlots() {
   if (S.availableSlots.length === 0 && S.blockedSlots.length === 0) {
     slotsGrid.innerHTML = `
       <div style="grid-column:1/-1;text-align:center;padding:24px;font-size:12px;color:var(--muted);">
-        <span style="font-family:'Cormorant Garamond',serif;font-style:italic;font-size:28px;color:rgba(196,132,90,0.3);display:block;margin-bottom:8px;">✦</span>
-        El especialista no atiende este día
+        <span style="font-family:'Cormorant Garamond',serif;font-style:italic;font-size:28px;
+                     color:rgba(196,132,90,0.3);display:block;margin-bottom:8px;">✦</span>
+        La especialista no atiende este día
       </div>`;
     return;
   }
@@ -412,24 +374,21 @@ function renderSlots() {
   const allSlots = [...S.availableSlots, ...S.blockedSlots]
     .sort((a, b) => toMin(a) - toMin(b));
 
-  // Calcular slots que ocupará la cita seleccionada (para resaltarlos)
-  const durMin  = S.svc.durationMinutes;
-  const occSet  = new Set();
+  const dur    = S.svc.durationMinutes;
+  const occSet = new Set();
   if (S.time) {
     const tStart = toMin(S.time);
-    for (let m = tStart; m < tStart + durMin; m += 30) {
-      occSet.add(fromMin(m));
-    }
+    for (let m = tStart; m < tStart + dur; m += 30) occSet.add(fromMin(m));
   }
 
   slotsGrid.innerHTML = allSlots.map(t => {
     const isBlocked    = S.blockedSlots.includes(t);
     const isSel        = S.time === t;
     const isWillOccupy = occSet.has(t) && !isSel && !isBlocked;
-    const durBadge     = isSel ? `<span class="slot-dur">${durLabel(durMin)}</span>` : '';
+    const durBadge     = isSel ? `<span class="slot-dur">${durLabel(dur)}</span>` : '';
 
     let cls = 'slot';
-    if (isSel)         cls += ' sel';
+    if (isSel)             cls += ' sel';
     else if (isBlocked)    cls += ' taken';
     else if (isWillOccupy) cls += ' will-occupy';
 
@@ -445,17 +404,16 @@ function selTime(t) {
   updateConfirm();
 }
 
-// ═══════════════════════════════════════════════════════════════
+// ─────────────────────────────────────────────────────────────
 //  PASO 3 — CONFIRMACIÓN
-// ═══════════════════════════════════════════════════════════════
+// ─────────────────────────────────────────────────────────────
 
 function updateConfirm() {
   const ready = S.svc && S.spec && S.date && S.time;
-  document.getElementById('empty-confirm').style.display  = ready ? 'none'  : 'block';
-  document.getElementById('confirm-form').style.display   = ready ? 'block' : 'none';
+  document.getElementById('empty-confirm').style.display = ready ? 'none'  : 'block';
+  document.getElementById('confirm-form').style.display  = ready ? 'block' : 'none';
   if (!ready) return;
 
-  const cat     = S.CATS.find(c => c.id === S.svc.category);
   const ds      = S.date.toLocaleDateString('es-MX', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
   const endTime = fmt(fromMin(toMin(S.time) + S.svc.durationMinutes));
 
@@ -467,21 +425,16 @@ function updateConfirm() {
     <div>◈ <strong>Horario:</strong> ${fmt(S.time)} – ${endTime}</div>`;
 }
 
-// ── POST a la API — crear cita en MongoDB ────────────────────
+// ── POST a la API ─────────────────────────────────────────────
 async function confirmBooking() {
   const name  = document.getElementById('pat-name').value.trim();
   const phone = document.getElementById('pat-phone').value.trim();
+  if (!name) { document.getElementById('pat-name').focus(); return; }
 
-  if (!name) {
-    document.getElementById('pat-name').focus();
-    return;
-  }
+  const btn    = document.getElementById('btn-book');
+  const errEl  = document.getElementById('confirm-error');
+  const errMsg = document.getElementById('confirm-error-msg');
 
-  const btn     = document.getElementById('btn-book');
-  const errEl   = document.getElementById('confirm-error');
-  const errMsg  = document.getElementById('confirm-error-msg');
-
-  // UI de carga
   btn.disabled    = true;
   btn.textContent = 'Confirmando…';
   btn.classList.add('loading');
@@ -495,6 +448,7 @@ async function confirmBooking() {
     patientPhone:    phone,
     specialistId:    S.spec.specialistId,
     serviceId:       S.svc.serviceId,
+    serviceNames:    S.svc.name,
     date:            dateStr,
     startTime:       S.time,
     endTime:         endTime,
@@ -507,20 +461,13 @@ async function confirmBooking() {
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify(body),
     });
-
     const data = await res.json();
 
-    if (res.status === 409) {
-      // Slot ya ocupado — actualizar slots y avisar
-      throw new Error(data.error || 'Este horario ya fue ocupado. Elige otro horario.');
-    }
-    if (!res.ok || !data.ok) {
-      throw new Error(data.error || 'Error al confirmar la cita');
-    }
+    if (res.status === 409) throw new Error(data.error || 'Este horario ya fue ocupado. Elige otro.');
+    if (!res.ok || !data.ok) throw new Error(data.error || 'Error al confirmar la cita');
 
-    // ── Éxito ─────────────────────────────────────────────────
-    const ds      = S.date.toLocaleDateString('es-MX', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
-    const endFmt  = fmt(endTime);
+    // ── Éxito ─────────────────────────────────────────────
+    const ds     = S.date.toLocaleDateString('es-MX', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
 
     document.getElementById('modal-recap').innerHTML = `
       <div>👤 <strong>Paciente:</strong> ${name}</div>
@@ -528,20 +475,16 @@ async function confirmBooking() {
       <div>◆ <strong>Duración:</strong> ${durLabel(S.svc.durationMinutes)}</div>
       <div>◈ <strong>Especialista:</strong> ${S.spec.name}</div>
       <div>◆ <strong>Fecha:</strong> ${ds}</div>
-      <div>◈ <strong>Horario:</strong> ${fmt(S.time)} – ${endFmt}</div>
+      <div>◈ <strong>Horario:</strong> ${fmt(S.time)} – ${fmt(endTime)}</div>
       ${phone ? `<div>📱 <strong>WhatsApp:</strong> ${phone}</div>` : ''}`;
 
     document.getElementById('modal-bg').classList.add('open');
-
-    // Refrescar slots para que el recién ocupado se marque bloqueado
-    await fetchSlots();
+    await fetchSlots(); // refrescar disponibilidad
 
   } catch (err) {
     console.error('Error al confirmar:', err);
-    errMsg.textContent     = err.message || 'Ocurrió un error. Intenta de nuevo.';
-    errEl.style.display    = 'flex';
-
-    // Si el slot ya fue tomado, refrescar disponibilidad
+    errMsg.textContent  = err.message || 'Ocurrió un error. Intenta de nuevo.';
+    errEl.style.display = 'flex';
     if (err.message && err.message.includes('ocupado')) {
       S.time = null;
       await fetchSlots();
@@ -557,9 +500,7 @@ async function confirmBooking() {
 function closeModal() {
   document.getElementById('modal-bg').classList.remove('open');
   S.svc  = null;
-  S.spec = null;
-  S.date = null;
-  S.time = null;
+  S.spec = S.date = S.time = null;
   S.availableSlots = [];
   S.blockedSlots   = [];
   document.getElementById('pat-name').value  = '';
@@ -569,51 +510,36 @@ function closeModal() {
   renderSvcs();
   renderSpecList();
   updateConfirm();
-  // Ocultar calendario y slots
   document.getElementById('cal-section').style.display   = 'none';
   document.getElementById('slots-section').style.display = 'none';
 }
 
-// ═══════════════════════════════════════════════════════════════
+// ─────────────────────────────────────────────────────────────
 //  TAB ESPECIALISTAS
-// ═══════════════════════════════════════════════════════════════
+// ─────────────────────────────────────────────────────────────
 
-const ALBL = { high:'Alta disponibilidad', med:'Disponibilidad media', sat:'Solo Sábados', low:'Disponibilidad baja' };
+const ALBL = { high:'Alta disponibilidad', med:'Disponibilidad media', sat:'Solo Sábados', low:'Baja disponibilidad' };
 
 function renderSpecs() {
   const grid = document.getElementById('specs-grid');
-
   if (!S.SPECS.length) {
-    grid.innerHTML = `
-      <div class="loading-overlay" style="grid-column:1/-1">
-        <div class="spinner"></div>
-        <span class="loading-text">Cargando especialistas…</span>
-      </div>`;
+    grid.innerHTML = `<div class="loading-overlay" style="grid-column:1/-1"><div class="spinner"></div><span class="loading-text">Cargando…</span></div>`;
     return;
   }
-
   grid.innerHTML = S.SPECS.map(sp => {
     const treats = S.SVCS.filter(sv => (sp.services || []).includes(sv.serviceId));
-    const schedMap = sp.scheduleDisplay || {};
-    const schedEntries = typeof schedMap === 'object'
-      ? (schedMap instanceof Map ? [...schedMap] : Object.entries(schedMap))
-      : [];
-
+    const schedMap     = sp.scheduleDisplay || {};
+    const schedEntries = schedMap instanceof Map ? [...schedMap] : Object.entries(schedMap);
     return `<div class="spec-card">
       <div class="spec-card-top">
         <div class="spec-card-mono" style="background:${sp.color};">${sp.initials}</div>
-        <div class="spec-card-ti">
-          <h3>${sp.name}</h3>
-          <p>${sp.role}</p>
-        </div>
+        <div class="spec-card-ti"><h3>${sp.name}</h3><p>${sp.role}</p></div>
       </div>
       <div class="spec-card-body">
         <div class="sc-lbl">Tratamientos (${treats.length})</div>
         <div class="sc-tags">${treats.map(t => `<span class="sc-tag">${t.name}</span>`).join('')}</div>
         <div class="sc-lbl">Horario</div>
-        <table class="sched-t">
-          ${schedEntries.map(([d,h]) => `<tr><td>${d}</td><td>${h}</td></tr>`).join('')}
-        </table>
+        <table class="sched-t">${schedEntries.map(([d,h]) => `<tr><td>${d}</td><td>${h}</td></tr>`).join('')}</table>
         <div class="avail-row">
           <span>Disponibilidad</span>
           <span class="avail-badge ${sp.availability}">${ALBL[sp.availability] || sp.availability}</span>
